@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Window hotkey",
+    "description": "One global shortcut (Ctrl+Alt+Q by default) that minimizes the DeepSeek Harness window and brings it back."
+  }
+}
