@@ -2,6 +2,10 @@
 
 DeepSeek Harness 插件：一个全局快捷键（默认 `Ctrl+Alt+Q`），在「最小化」和「唤回并置前」之间切换主窗口。在任何程序里按都生效。
 
+灵感来源于微信的Ctrl+Alt+W，个人用的很习惯，于是给DSH也实现一个类似的功能。
+
+插件全部内容均来源于DSH，欢迎交流讨论。
+
 > **仅限 Windows。** 依赖 Win32 API（全局热键、窗口管理）和系统自带的 .NET Framework 编译器，不支持 macOS / Linux。
 
 ## 安装
