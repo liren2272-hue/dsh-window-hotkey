@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Test output
+test/*-results.txt
+test/gen-status.txt
+test/generated-helper.ps1
+test/helper-*.ps1
+test/*-helper.log
+test/*-hotkey.log
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# Packaging
+*.tgz
