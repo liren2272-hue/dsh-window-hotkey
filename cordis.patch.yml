@@ -1,0 +1,7 @@
+- insert:
+    - id: window-hotkey
+      name: '@liren2272/dsh-hotkey'
+      config:
+        enabled: true
+        hotkey: ctrl+alt+q
+        windowTitle: DeepSeek Harness
