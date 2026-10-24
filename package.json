@@ -1,9 +1,30 @@
 {
-  "name": "@local/dsh-hotkey",
+  "name": "@liren2272/dsh-hotkey",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "One global shortcut that minimizes the DeepSeek Harness window and brings it back.",
+  "license": "MIT",
+  "description": "DeepSeek Harness plugin: one global shortcut (Ctrl+Alt+Q) that minimizes the window and brings it back.",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "hotkey",
+    "global-shortcut",
+    "window",
+    "windows"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/liren2272-hue/dsh-window-hotkey.git"
+  },
+  "homepage": "https://github.com/liren2272-hue/dsh-window-hotkey#readme",
+  "bugs": {
+    "url": "https://github.com/liren2272-hue/dsh-window-hotkey/issues"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
   "exports": {
     ".": "./index.js",
     "./icon": "./icon.svg",
@@ -17,9 +38,16 @@
     "README.md",
     "locale/*.json"
   ],
+  "scripts": {
+    "test:parse": "node test/parse.test.mjs && cat test/parse-results.txt",
+    "gen": "node test/gen.mjs && cat test/gen-status.txt"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
     }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2"
   }
 }

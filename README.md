@@ -1,11 +1,63 @@
-# 窗口快捷键（@local/dsh-hotkey）
+# dsh-window-hotkey
 
-按一个全局快捷键，在「最小化」和「唤回并置前」之间切换 DeepSeek Harness 主窗口。
-默认 `Ctrl+Alt+Q`，在任何程序里按都生效。
+DeepSeek Harness 插件：一个全局快捷键（默认 `Ctrl+Alt+Q`），在「最小化」和「唤回并置前」之间切换主窗口。在任何程序里按都生效。
+
+灵感来源于微信的Ctrl+Alt+W，个人用的很习惯，于是给DSH也实现一个类似的功能。
+
+插件全部内容均来源于DSH，欢迎交流讨论。
+
+> **仅限 Windows。** 依赖 Win32 API（全局热键、窗口管理）和系统自带的 .NET Framework 编译器，不支持 macOS / Linux。
+
+## 安装
+
+### 方式 A：pnpm / npm 安装（推荐）
+
+```bash
+# 在 DSH 的 profile 目录里执行（通常是 ~/.dsh/<profile>）
+pnpm add @liren2272/dsh-hotkey
+```
+
+然后把插件加进配置补丁。编辑该 profile 的 `dsh-bundle.yaml`（或任意 cordis 配置补丁文件），追加：
+
+```yaml
+- insert:
+    - id: window-hotkey
+      name: '@liren2272/dsh-hotkey'
+      config:
+        enabled: true
+        hotkey: ctrl+alt+q
+        windowTitle: DeepSeek Harness
+```
+
+重启 DeepSeek Harness（或重新启停插件）后生效。
+
+### 方式 B：本地目录安装
+
+```bash
+git clone https://github.com/liren2272-hue/dsh-window-hotkey.git
+cd dsh-window-hotkey
+# 无需构建，也无需安装依赖：插件是纯 ESM，运行时零第三方依赖
+```
+
+在 profile 的配置补丁里用绝对路径引用：
+
+```yaml
+- insert:
+    - id: window-hotkey
+      name: '/absolute/path/to/dsh-window-hotkey'
+      config:
+        enabled: true
+        hotkey: ctrl+alt+q
+```
+
+### 从源码验证安装是否生效
+
+启动后按一次快捷键，然后看助手日志（默认 `%TEMP%\dsh-hotkey\hotkey.log`）：
+
+- 出现 `registered mods=0x0003 vk=0x51 id=1` —— 快捷键已抢到
+- 出现 `toggle: ...` 行 —— 按键已被助手收到并执行
 
 ## 配置
-
-在插件配置里改（`cordis.patch.yml` 或插件详情面板）：
 
 | 键 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -48,10 +100,45 @@
 
 ## 开发与测试
 
-`test/` 下有本地验证脚本，都需要用系统 PowerShell 以 `-ExecutionPolicy Bypass` 运行（默认策略禁止直接跑 `.ps1`）：
+`test/` 下是可移植的本地验证脚本。宿主进程是 Electron under `ELECTRON_RUN_AS_NODE`，所以运行方式取决于环境：
 
-- `parse.test.mjs`：组合键解析单测，结果写到 `test/parse-results.txt`
-- `run-helper-test.ps1`：生成助手脚本并投递模拟 `WM_HOTKEY`，验证最小化/恢复与窗口识别
-- `run-lifecycle-test.ps1`：验证快捷键冲突重试、宿主进程消失后助手退出
+**如果 PATH 里有 Node（>= 22.19）：**
 
-`gen.mjs` 用 DSH 自带的 Node（`$env:ELECTRON_RUN_AS_NODE=1` + `DeepSeek Harness.exe`）渲染助手脚本，方便检查最终生成的 C#/PowerShell 源码。
+```bash
+npm test           # 组合键解析单测，结果写到 test/parse-results.txt
+npm run gen        # 渲染助手脚本到 test/generated-helper.ps1，方便检查生成的源码
+```
+
+**如果只用 DSH 自带的 Node：**
+
+```bash
+# Windows PowerShell
+$env:ELECTRON_RUN_AS_NODE = '1'
+& 'C:\Program Files\Deepseek\DeepSeek Harness.exe' test/parse.test.mjs
+Get-Content test/parse-results.txt
+```
+
+`plugin-smoke.mjs` 会用桩 context 加载真实插件入口（`apply → spawn helper → read helper log`），
+约 6 秒后把结果写进 `test/smoke-results.txt`：
+
+```bash
+node test/plugin-smoke.mjs && cat test/smoke-results.txt
+```
+
+注意：smoke 测试会真的注册一次全局快捷键并拉起 PowerShell 助手，跑完即清理。
+如果 `ctrl+alt+q` 已被占用，助手日志里会出现 `register failed`，那是预期行为而非测试失败。
+
+## 目录结构
+
+```
+index.js            插件入口：apply()、配置合并、宿主侧日志回读
+hotkey.js           Win32 侧：组合键解析、C# 助手源码、进程拉起与清理
+cordis.patch.yml    cordis 配置补丁：把插件插进 profile
+icon.svg            插件图标
+locale/             插件在 DSH 设置界面显示的名称与描述（en / zh）
+test/               可移植的本地验证脚本
+```
+
+## License
+
+[MIT](./LICENSE)

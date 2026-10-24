@@ -1,6 +1,6 @@
 - insert:
     - id: window-hotkey
-      name: '@local/dsh-hotkey'
+      name: '@liren2272/dsh-hotkey'
       config:
         enabled: true
         hotkey: ctrl+alt+q

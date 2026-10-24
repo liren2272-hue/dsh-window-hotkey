@@ -4,10 +4,18 @@ node_modules/
 # Packaging
 *.tgz
 
-# Runtime logs written by the plugin itself
-trace.log
-notify.log
-*.log
+# Test output
+test/*-results.txt
+test/gen-status.txt
+test/generated-helper.ps1
+test/helper-*.ps1
+test/*-helper.log
+test/*-hotkey.log
+test/shots/
+test/accent/
+test/chip-preview/
+test/stack-preview/
+.screenshot-scratch/
 
 # Editor / OS
 .DS_Store
@@ -20,10 +28,6 @@ Thumbs.db
 *.bak
 *.bak-*
 
-# Test scratch output
-test/shots/
-test/accent/
-test/chip-preview/
-test/stack-preview/
-test/*-results.txt
-.screenshot-scratch/
+# Runtime logs written at runtime
+trace.log
+notify.log

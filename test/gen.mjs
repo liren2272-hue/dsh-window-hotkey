@@ -12,7 +12,7 @@ const parentPid = Number(process.env.DSH_HOTKEY_TEST_PARENT ?? '0') || 0
 
 const combo = parseHotkey(hotkey)
 const registerTimeoutMs = Number(process.env.DSH_HOTKEY_TEST_REGISTER_TIMEOUT ?? '8000')
-const script = buildHelperScript({ windowTitle: 'DeepSeek Harness', logFile }, combo, {
+const script = buildHelperScript({ windowTitle: process.env.DSH_HOTKEY_TEST_TITLE ?? 'DeepSeek Harness', logFile }, combo, {
   parentPid,
   registerTimeoutMs,
 })
