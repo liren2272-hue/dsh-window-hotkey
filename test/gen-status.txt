@@ -1,0 +1,1 @@
+combo=Ctrl+Alt+Q mods=3 vk=81 bytes=13468 out=C:\Users\15940\Documents\deepseek-harness\default-workspace\dsh-hotkey\test\helper-c.ps1 parent=18792 timeout=8000

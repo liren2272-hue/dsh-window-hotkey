@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "窗口快捷键",
+    "description": "用一个全局快捷键（默认 Ctrl+Alt+Q）最小化 DeepSeek Harness 窗口，再按一次唤回。"
+  }
+}

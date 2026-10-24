@@ -1,0 +1,25 @@
+{
+  "name": "@local/dsh-hotkey",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "One global shortcut that minimizes the DeepSeek Harness window and brings it back.",
+  "exports": {
+    ".": "./index.js",
+    "./icon": "./icon.svg",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "index.js",
+    "hotkey.js",
+    "cordis.patch.yml",
+    "icon.svg",
+    "README.md",
+    "locale/*.json"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
