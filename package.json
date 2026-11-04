@@ -1,0 +1,40 @@
+{
+  "name": "@local/dsh-window-hotkey",
+  "version": "1.0.0",
+  "icon": "./icon.svg",
+  "private": true,
+  "description": "Toggle the DSH window with a global hotkey (default Ctrl+Alt+Q), rebindable from Settings → Shortcuts.",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./icon": "./icon.svg",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "hotkey.js",
+    "cordis.patch.yml",
+    "icon.svg",
+    "locale/*.json"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-shortcuts"
+      ]
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.5"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  }
+}

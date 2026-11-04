@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Window Hotkey",
+    "description": "Toggle the DSH window with a global hotkey (default Ctrl+Alt+Q); rebindable in Settings → Shortcuts."
+  }
+}
