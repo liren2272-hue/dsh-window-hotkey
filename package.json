@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-window-hotkey",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "icon": "./icon.svg",
   "private": true,
   "description": "Toggle the DSH window with a global hotkey (default Ctrl+Alt+Q), rebindable from Settings → Shortcuts.",

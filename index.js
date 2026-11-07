@@ -2,25 +2,25 @@
  * Host half of @local/dsh-window-hotkey.
  *
  * The host process is Electron started with ELECTRON_RUN_AS_NODE: it owns no
- * BrowserWindow and no host service exposes a window handle, so the real
- * Ctrl+Alt+Q toggle is driven from a small PowerShell helper (hotkey.js) that
- * registers a Win32 global hotkey and minimizes/restores the app window even
- * when the app is not focused.
+ * BrowserWindow and no host service exposes a window handle, so the real window
+ * toggle is driven from a small PowerShell helper (hotkey.js) that registers a
+ * Win32 global hotkey and minimizes/restores the app window even when the app
+ * is not focused.
  *
  * Rebinding: the shortcut panel edits `keybindings.json` through Electron's own
- * single-writer adapter, which only moves the in-app binding. The OS-global
- * registration lives in the helper process, so the Client half forwards every
- * accepted binding here over a webServer route and this side restarts the
- * helper. That makes the panel the single source of truth: what it shows is
- * what the machine actually registers.
+ * single-writer adapter. That file is THE source of truth for what the row
+ * displays. This host reads that same file (once a second, plus a fast-path POST
+ * from an older client build) and re-arms the helper to match. There is only
+ * ONE controller: every path funnels through `rebind`, which coalesces bursts,
+ * and nothing here ever writes back to the panel. That is what makes the row
+ * behave exactly like every other shortcut.
  *
  * The chosen combination is also cached in hotkey-state.json next to this file,
- * so a host restart re-arms the same key instead of falling back to the patch
- * config.
+ * so a host restart re-arms the same key before the panel file is consulted.
  *
  * Failure policy: a broken hotkey must never take the desktop down again.
- * Every step below is guarded and reports to the helper log instead of
- * throwing out of apply().
+ * Every step below is guarded and reports to the helper log instead of throwing
+ * out of apply().
  */
 import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -28,6 +28,13 @@ import { fileURLToPath } from 'node:url'
 import { DEFAULT_LOG, logSize, parseHotkey, readNewLines, record, startHelper } from './hotkey.js'
 
 const DEFAULT_HOTKEY = 'ctrl+alt+q'
+/**
+ * What the panel shows when our command has no override: it comes from the
+ * `defaults['desktop:windows']` declared in client.js, NOT from config.hotkey.
+ * Keep the two in sync. A "reset" in the panel removes the override entirely,
+ * so the host must re-arm exactly this rather than keeping the previous key.
+ */
+const PANEL_DEFAULT_HOTKEY = DEFAULT_HOTKEY
 const DEFAULT_WINDOW_TITLE = 'DeepSeek Harness'
 const STATE_FILE = join(dirname(fileURLToPath(import.meta.url)), 'hotkey-state.json')
 const ROUTE = '/dsh-window-hotkey'
@@ -48,9 +55,7 @@ function shortError(error) {
 
 /**
  * Cached combination, or undefined when nothing has been chosen yet.
- *
- * undefined and null mean different things: undefined is "no opinion, use the
- * patch config", null is "the user deliberately unbound the command".
+ * undefined = "no opinion, use the patch config"; null = "deliberately unbound".
  */
 function readState() {
   try {
@@ -66,7 +71,6 @@ function writeState(cfg, hotkey) {
   try {
     writeFileSync(STATE_FILE, `${JSON.stringify({ hotkey }, null, 2)}\n`, 'utf8')
   } catch (error) {
-    // A read-only install still works for this session; only the cache is lost.
     record(cfg, `could not cache the chosen hotkey: ${shortError(error)}`)
   }
 }
@@ -77,34 +81,13 @@ function json(res, status, value) {
 }
 
 // ---- the shortcut panel's file -------------------------------------------
-//
-// Electron's shortcut editor owns keybindings.json. Watching it here means a
-// rebind takes effect even when the renderer never forwards it (an old client
-// bundle, a hand edit, a change made while the page was loading). The route is
-// still the fast path; this is the safety net.
 
 const PANEL_CODES = {
-  Slash: '/',
-  Comma: ',',
-  Period: '.',
-  Backslash: '\\',
-  Backquote: '`',
-  Minus: '-',
-  Equal: '=',
-  BracketLeft: '[',
-  BracketRight: ']',
-  Semicolon: ';',
-  Quote: "'",
-  Enter: 'enter',
-  Escape: 'escape',
-  Space: 'space',
-  Tab: 'tab',
-  Backspace: 'backspace',
-  Delete: 'delete',
-  ArrowUp: 'up',
-  ArrowDown: 'down',
-  ArrowLeft: 'left',
-  ArrowRight: 'right',
+  Slash: '/', Comma: ',', Period: '.', Backslash: '\\', Backquote: '`',
+  Minus: '-', Equal: '=', BracketLeft: '[', BracketRight: ']',
+  Semicolon: ';', Quote: "'", Enter: 'enter', Escape: 'escape',
+  Space: 'space', Tab: 'tab', Backspace: 'backspace', Delete: 'delete',
+  ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
 }
 const PANEL_MODIFIERS = { control: 'ctrl', alt: 'alt', shift: 'shift', meta: 'win' }
 
@@ -119,11 +102,10 @@ function panelKeyToken(code) {
   return Object.hasOwn(PANEL_CODES, code) ? PANEL_CODES[code] : null
 }
 
-/** Panel binding -> "ctrl+alt+q", or null when it is unbound/unexpressible. */
+/** Panel binding -> "ctrl+alt+q"; null = unbound; undefined = unexpressible. */
 function bindingToHotkey(binding) {
   if (binding === null) return null
   if (typeof binding !== 'object') return undefined
-  // A two-key chord cannot be a RegisterHotKey combination.
   if (binding.secondCode !== undefined) return undefined
   const key = panelKeyToken(binding.code)
   if (key === null) return undefined
@@ -132,7 +114,6 @@ function bindingToHotkey(binding) {
   return [...mods, key].join('+')
 }
 
-/** The panel file for this machine, or null when it does not exist yet. */
 function panelFile() {
   const appData = process.env.APPDATA
   if (typeof appData !== 'string' || appData === '') return null
@@ -142,28 +123,24 @@ function panelFile() {
     join(appData, 'dsh-desktop', 'keybindings.json'),
   ]
   for (const candidate of candidates) {
-    try {
-      readFileSync(candidate)
-      return candidate
-    } catch {
-      // try the next candidate
-    }
+    try { readFileSync(candidate); return candidate } catch { /* next */ }
   }
-  // Not created yet: return the canonical location so a later edit is seen.
   return candidates[0]
 }
 
-/** Read the panel's choice for this command; undefined when it has no opinion. */
+/**
+ * Read the panel's choice for this command.
+ *   string  = an explicit override from keybindings.json
+ *   null    = explicitly unbound
+ *   DEFAULT = no override (reset / never edited) -> the row shows its default
+ *   undefined = unreadable file -> keep whatever the machine has now
+ */
 function readPanelChoice(file, platform) {
   let document
-  try {
-    document = JSON.parse(readFileSync(file, 'utf8'))
-  } catch {
-    return undefined
-  }
+  try { document = JSON.parse(readFileSync(file, 'utf8')) } catch { return undefined }
   const profile = document?.profiles?.[`desktop:${platform}`]
-  if (profile === null || typeof profile !== 'object') return undefined
-  if (!Object.hasOwn(profile, COMMAND_ID)) return undefined
+  if (profile === null || typeof profile !== 'object') return PANEL_DEFAULT_HOTKEY
+  if (!Object.hasOwn(profile, COMMAND_ID)) return PANEL_DEFAULT_HOTKEY
   return bindingToHotkey(profile[COMMAND_ID])
 }
 
@@ -173,11 +150,7 @@ function readBody(req, limit = 8 * 1024) {
     let size = 0
     req.on?.('data', (chunk) => {
       size += chunk.length
-      if (size > limit) {
-        reject(new Error('request body too large'))
-        req.destroy?.()
-        return
-      }
+      if (size > limit) { reject(new Error('request body too large')); req.destroy?.(); return }
       chunks.push(chunk)
     })
     req.on?.('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
@@ -201,16 +174,11 @@ export function apply(ctx, config = {}) {
   function stopCurrent() {
     const handle = current?.handle
     current = null
-    try {
-      handle?.stop?.()
-    } catch (error) {
-      record(cfg, `helper stop failed: ${shortError(error)}`)
-    }
+    try { handle?.stop?.() } catch (error) { record(cfg, `helper stop failed: ${shortError(error)}`) }
   }
 
-  /** Spawn one helper, returning the combo plus the log offset it started at. */
   function startCombo(comboText) {
-    const combo = parseHotkey(comboText) // throws on an unusable combination
+    const combo = parseHotkey(comboText)
     const offset = logSize(cfg)
     stopCurrent()
     const handle = startHelper(cfg, combo, {
@@ -218,20 +186,10 @@ export function apply(ctx, config = {}) {
       registerTimeoutMs: REGISTER_TIMEOUT_MS,
     })
     current = { combo, handle, text: comboText }
-    record(
-      cfg,
-      `helper started pid=${handle?.pid} hotkey=${combo.label} titleSuffix=${JSON.stringify(windowTitle)}`,
-    )
+    record(cfg, `helper started pid=${handle?.pid} hotkey=${combo.label} titleSuffix=${JSON.stringify(windowTitle)}`)
     return { combo, offset }
   }
 
-  /**
-   * Wait until the new helper either owns the combination or gives up.
-   *
-   * The spawn itself always succeeds, so "did it work" is only visible in the
-   * log. Returning false here is what lets a failed rebind roll back instead of
-   * silently leaving the user with no working hotkey.
-   */
   async function confirmRegistration(offset, timeoutMs = REGISTER_TIMEOUT_MS + 1_500) {
     let cursor = offset
     const deadline = Date.now() + timeoutMs
@@ -248,34 +206,64 @@ export function apply(ctx, config = {}) {
     return false
   }
 
-  /** Apply a combination from the shortcut panel, rolling back if it cannot be owned. */
+  // ONE controller for the global hotkey. A burst of notifications (POST fast
+  // path + file poll + an older client forwarding) coalesces into a single
+  // re-arm: `desired` is set immediately and rebind() always acts on the latest
+  // value, so no two helpers race to own RegisterHotKey.
+  // undefined = "no request yet": applyDesired() must NOT act on it, otherwise
+  // it would unbind the key armed at startup. null is a real request (unbind).
+  let desired = undefined // string, null (unbound), or undefined (no request)
+  let applying = false
+
+  async function applyDesired() {
+    if (applying || disposed) return
+    applying = true
+    try {
+      while (!disposed) {
+        const target = desired
+        if (target === undefined || target === (current?.text ?? null)) return
+        let result
+        try { result = await rebind(target) } catch (error) {
+          record(cfg, `rebind threw: ${shortError(error)}`)
+        }
+        // A failure is logged by rebind(); don't retry the same value forever.
+        if (result && !result.ok) {
+          record(cfg, `rebind to ${JSON.stringify(target)} failed: ${result.error}`)
+        }
+        if (desired === target) return
+        // `desired` changed while we were registering: loop and follow the new
+        // value instead of resurrecting the stale one.
+      }
+    } finally {
+      applying = false
+    }
+  }
+
+  function requestHotkey(value) {
+    desired = value
+    applyDesired().catch(() => undefined)
+  }
+
+  /** Apply one combination, rolling back to the previous key if it cannot be owned. */
   async function rebind(comboText) {
+    if (comboText === null) return unbind()
     const previous = current?.text ?? null
     let started
-    try {
-      started = startCombo(comboText)
-    } catch (error) {
+    try { started = startCombo(comboText) } catch (error) {
       return { ok: false, error: shortError(error) }
     }
     if (await confirmRegistration(started.offset)) {
       writeState(cfg, comboText)
       return { ok: true, hotkey: comboText, label: started.combo.label }
     }
-    // Roll back so a conflicting pick never costs the user their working key.
     if (previous !== null) {
-      try {
-        startCombo(previous)
-      } catch (error) {
+      try { startCombo(previous) } catch (error) {
         record(cfg, `could not restore the previous hotkey: ${shortError(error)}`)
       }
     }
-    return {
-      ok: false,
-      error: `"${comboText}" could not be registered (another program may already own it)`,
-    }
+    return { ok: false, error: `"${comboText}" could not be registered (another program may already own it)` }
   }
 
-  /** Drop the global registration entirely (the panel shows an unbound row). */
   function unbind() {
     stopCurrent()
     writeState(cfg, null)
@@ -283,100 +271,52 @@ export function apply(ctx, config = {}) {
     return { ok: true, hotkey: null, label: null }
   }
 
-  // stored === undefined means the panel has never spoken: use the patch
-  // config. stored === null means the user unbound it on purpose, so honour
-  // that across restarts instead of resurrecting the default.
-  const initial = stored === undefined ? text(config.hotkey, DEFAULT_HOTKEY) : stored
+  // --- initial arm -------------------------------------------------------
+  // Prefer the panel file (the user's actual choice) over the cache; the cache
+  // is only a fallback so the key works before the renderer has written yet.
+  const platform = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : 'linux'
+  const panel = text(config.panelFile, '') || panelFile()
+  const panelChoice = panel === null ? undefined : readPanelChoice(panel, platform)
+  const initial = panelChoice !== undefined
+    ? panelChoice
+    : (stored === undefined ? text(config.hotkey, DEFAULT_HOTKEY) : stored)
 
   if (initial !== null) {
-    try {
-      startCombo(initial)
-    } catch (error) {
-      record(cfg, `config hotkey ${JSON.stringify(initial)} is not usable: ${shortError(error)}`)
-      if (stored !== undefined) {
-        // The cached choice went stale (a hand-edited file, say). Fall back to
-        // the patch config rather than leaving the user with nothing.
-        try {
-          startCombo(text(config.hotkey, DEFAULT_HOTKEY))
-        } catch (fallbackError) {
-          record(cfg, `fallback hotkey is not usable either: ${shortError(fallbackError)}`)
-        }
+    try { startCombo(initial) } catch (error) {
+      record(cfg, `initial hotkey ${JSON.stringify(initial)} is not usable: ${shortError(error)}`)
+      try { startCombo(text(config.hotkey, DEFAULT_HOTKEY)) } catch (fallbackError) {
+        record(cfg, `fallback hotkey is not usable either: ${shortError(fallbackError)}`)
       }
     }
   } else {
     record(cfg, 'no global hotkey bound (the shortcut panel can assign one)')
   }
 
-  // Safety net: follow the shortcut panel's file directly.
-  //
-  // The Client half forwards an accepted binding over the route, which is the
-  // fast path. This watcher covers the cases where that never arrives — an old
-  // client bundle still in the module graph, a hand edit, or a change made
-  // while the page was loading. Without it the panel would happily show a new
-  // key while the machine kept registering the old one.
-  const platform = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : 'linux'
-  // config.panelFile lets a test point the watcher at a fixture instead of the
-  // real profile file.
-  const panel = text(config.panelFile, '') || panelFile()
+  // Remember where we started so the poll does not re-arm needlessly.
+  let lastPanelChoice = panelChoice
 
+  // --- single source of truth: watch the panel's file --------------------
   ctx.effect(() => {
     if (panel === null) return () => {}
-    let lastSeen = current?.text ?? null
-    let busy = false
     let timer = null
-
-    async function poll() {
-      if (busy || disposed) return
+    const poll = () => {
       const choice = readPanelChoice(panel, platform)
-      // undefined = the panel has no opinion yet; undefined also covers an
-      // unreadable file, which must not disturb a working registration.
-      if (choice === undefined) return
-      if (choice === lastSeen) return
-      busy = true
-      try {
-        if (choice === null) {
-          unbind()
-          lastSeen = null
-          return
-        }
-        const result = await rebind(choice)
-        if (result.ok) {
-          lastSeen = choice
-        } else {
-          // The machine refused it. Keep the working key and say so; the panel
-          // still shows the refused choice, so the log is the record.
-          record(cfg, `panel choice ${JSON.stringify(choice)} was not applied: ${result.error}`)
-          lastSeen = current?.text ?? null
-        }
-      } catch (error) {
-        record(cfg, `panel watcher failed: ${shortError(error)}`)
-      } finally {
-        busy = false
-      }
+      if (choice === undefined || choice === lastPanelChoice) return
+      lastPanelChoice = choice
+      requestHotkey(choice)
     }
-
-    timer = setInterval(() => {
-      poll().catch(() => undefined)
-    }, WATCH_INTERVAL_MS)
-    // Do not hold the host process open on this timer.
+    timer = setInterval(poll, WATCH_INTERVAL_MS)
     timer.unref?.()
-
-    return () => {
-      if (timer !== null) clearInterval(timer)
-    }
+    return () => { if (timer !== null) clearInterval(timer) }
   }, 'window-hotkey: shortcut panel watcher')
 
-  // Cordis has no `dispose` event — the cleanup hook is the function returned
-  // from ctx.effect(). Registering a disposer here means unloading the plugin
-  // (or stopping the host) kills the helper instead of leaving a process that
-  // still owns the global hotkey.
-  ctx.effect(() => {
-    return () => {
-      disposed = true
-      stopCurrent()
-    }
-  }, 'window-hotkey: global hotkey helper')
+  // Cleanup: killing the helper on unload avoids a process that still owns the
+  // global hotkey after the plugin is gone.
+  ctx.effect(() => () => { disposed = true; stopCurrent() }, 'window-hotkey: global hotkey helper')
 
+  // Compatibility fast path: an older client build may still POST here. It is
+  // funneled through the very same coalescing controller, so it can never fight
+  // the file-watcher. Nothing is ever written back to the panel.
   ctx.inject(['webServer'], (sctx) => {
     try {
       sctx.effect(
@@ -384,8 +324,6 @@ export function apply(ctx, config = {}) {
           sctx.webServer.register(
             {
               kind: 'prefix',
-              // No trailing slash: the host matches `pathname === prefix ||
-              // pathname.startsWith(prefix + '/')`.
               path: ROUTE,
               handler: async (req, res) => {
                 const url = new URL(req.url ?? '/', 'http://dsh.local')
@@ -397,28 +335,25 @@ export function apply(ctx, config = {}) {
                     hotkey: current?.text ?? null,
                     label: current?.combo?.label ?? null,
                     log: DEFAULT_LOG,
+                    // The panel is the authority; this only reports the machine.
+                    panelChoice: lastPanelChoice ?? null,
                   })
                 }
 
                 if (action === 'bind' && req.method === 'POST') {
                   let body
-                  try {
-                    body = JSON.parse((await readBody(req)) || '{}')
-                  } catch (error) {
+                  try { body = JSON.parse((await readBody(req)) || '{}') } catch (error) {
                     return json(res, 400, { ok: false, error: `invalid request body: ${shortError(error)}` })
                   }
-                  // null is a deliberate unbind, not a missing value.
-                  if (body?.hotkey === null) return json(res, 200, unbind())
+                  if (body?.hotkey === null) {
+                    requestHotkey(null)
+                    return json(res, 200, { ok: true, hotkey: null, label: null })
+                  }
                   if (typeof body?.hotkey !== 'string') {
                     return json(res, 400, { ok: false, error: 'hotkey must be a string or null' })
                   }
-                  try {
-                    const result = await rebind(body.hotkey)
-                    return json(res, result.ok ? 200 : 409, result)
-                  } catch (error) {
-                    record(cfg, `rebind failed unexpectedly: ${shortError(error)}`)
-                    return json(res, 500, { ok: false, error: shortError(error) })
-                  }
+                  requestHotkey(body.hotkey)
+                  return json(res, 200, { ok: true, hotkey: body.hotkey })
                 }
 
                 return json(res, 404, { ok: false, error: 'unknown window-hotkey route' })
