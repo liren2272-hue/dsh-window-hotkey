@@ -40,6 +40,19 @@ Chromium 的输入路由没被唤醒 —— 画面完整但点哪都没反应（
 `second-instance` → `focusPrimaryWindow()` → `window.show()` 把渲染进程真正唤醒。
 启动前必须从环境里移除 `ELECTRON_RUN_AS_NODE`，否则新进程会跑成 node、拿不到单实例锁。
 
+## 最小化后按一次热键为什么能直接唤醒
+
+窗口最小化（`iconic`）分支走 Win32 `SC_RESTORE`。`SC_RESTORE` 返回时还原动画仍在异步进行，
+立刻发 `SetForegroundWindow` 会撞上还原中的瞬态、被 Windows 前台锁静默拒绝 —— 表现为
+「按第一次窗口还原了但没抢到前台、按第二次才成功」。
+
+所以还原后会先轮询等 `IsIconic` 真正落地、再稍作延迟，然后才调 `Focus()`。`Focus()` 也不再
+只看 `SetForegroundWindow` 的返回值，而是带验证的重试循环（最多 5 次）：先
+`AttachThreadInput` 附着当前前台线程（后台进程抢前台的标准 workaround），再
+`BringWindowToTop` + `SetForegroundWindow`，每轮用 `GetForegroundWindow()` 核对前台是否
+真变成目标窗口，命中就成功返回。结果会写进 `hotkey.log`（`focus ok attempt=N` /
+`focus gave up fg=… target=…`），不再出现「看着成功其实没抢到」的假象。
+
 ## 配置
 
 `cordis.patch.yml` 里：

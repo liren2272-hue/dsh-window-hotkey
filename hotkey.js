@@ -343,38 +343,54 @@ public class DshHotkeyHelper
         return best;
     }
 
+    /// <summary>
+    /// Bring a window to the foreground, verifying that it actually got there.
+    ///
+    /// SetForegroundWindow from a background helper is best-effort under the
+    /// foreground lock, and calling it while the target is still animating a
+    /// restore silently fails. So each attempt attaches to the current
+    /// foreground thread (the standard workaround), then checks whether the
+    /// foreground window really became the target; only a confirmed match
+    /// counts as success. Returns true when the target owns the foreground.
+    /// </summary>
     static bool Focus(IntPtr hWnd)
     {
-        IntPtr foreground = GetForegroundWindow();
-        uint pid;
-        uint foregroundThread = foreground == IntPtr.Zero ? 0 : GetWindowThreadProcessId(foreground, out pid);
-        uint self = GetCurrentThreadId();
-        bool attached = false;
-        try
+        for (int attempt = 0; attempt < 5; attempt++)
         {
-            if (foregroundThread != 0 && foregroundThread != self) attached = AttachThreadInput(self, foregroundThread, true);
-        }
-        catch
-        {
-        }
-        try
-        {
-            BringWindowToTop(hWnd);
-            bool ok = SetForegroundWindow(hWnd);
-            if (!ok)
+            IntPtr foreground = GetForegroundWindow();
+            uint pid;
+            uint foregroundThread = foreground == IntPtr.Zero ? 0 : GetWindowThreadProcessId(foreground, out pid);
+            uint self = GetCurrentThreadId();
+            bool attached = false;
+            try
             {
-                Thread.Sleep(20);
-                ok = SetForegroundWindow(hWnd);
+                if (foregroundThread != 0 && foregroundThread != self) attached = AttachThreadInput(self, foregroundThread, true);
             }
-            return ok;
-        }
-        finally
-        {
-            if (attached)
+            catch
             {
-                try { AttachThreadInput(self, foregroundThread, false); } catch { }
             }
+            try
+            {
+                BringWindowToTop(hWnd);
+                SetForegroundWindow(hWnd);
+            }
+            finally
+            {
+                if (attached)
+                {
+                    try { AttachThreadInput(self, foregroundThread, false); } catch { }
+                }
+            }
+            Thread.Sleep(30);
+            if (GetForegroundWindow() == hWnd)
+            {
+                Log("focus ok attempt=" + attempt);
+                return true;
+            }
+            Thread.Sleep(60);
         }
+        Log("focus gave up fg=0x" + GetForegroundWindow().ToInt64().ToString("X8") + " target=0x" + hWnd.ToInt64().ToString("X8"));
+        return false;
     }
 
     /// <summary>
@@ -465,6 +481,11 @@ public class DshHotkeyHelper
         {
             bool sent = SysCommand(hWnd, SC_RESTORE);
             if (!sent) ShowWindowAsync(hWnd, SW_RESTORE);
+            // The restore animates asynchronously; a SetForegroundWindow issued
+            // while the window is still mid-restore fails silently and the press
+            // looks like a no-op. Let the restore land before claiming focus.
+            for (int i = 0; i < 20 && IsIconic(hWnd); i++) Thread.Sleep(25);
+            Thread.Sleep(40);
             Focus(hWnd);
             Log("restore hwnd=0x" + hWnd.ToInt64().ToString("X8") + " sent=" + sent + " iconic=" + IsIconic(hWnd) + " title=\\"" + title + "\\"");
             return;
