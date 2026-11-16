@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Window Hotkey",
-    "description": "Toggle the DSH window with a global hotkey (default Ctrl+Alt+Q); rebindable in Settings → Shortcuts."
+    "description": "Toggle the DSH window with a global hotkey (default Ctrl+Alt+Q); rebindable in Settings → Shortcuts. If the window is already visible but behind another window, a press brings it to the foreground instead of minimizing."
   }
 }

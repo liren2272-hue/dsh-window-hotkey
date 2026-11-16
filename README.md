@@ -1,6 +1,6 @@
 # dsh-window-hotkey
 
-用全局快捷键开关 DeepSeek Harness 窗口（默认 `Ctrl+Alt+Q`），无论应用是否在前台。
+用全局快捷键开关 DeepSeek Harness 窗口（默认 `Ctrl+Alt+Q`），无论应用是否在前台；窗口已显示但被别的窗口盖住时，按热键会先置顶到前台，而不是直接最小化。
 **改键直接在「通用设置 → 通用快捷键」里改，改完立刻生效。**
 
 ## 两个半边
@@ -53,6 +53,16 @@ Chromium 的输入路由没被唤醒 —— 画面完整但点哪都没反应（
 真变成目标窗口，命中就成功返回。结果会写进 `hotkey.log`（`focus ok attempt=N` /
 `focus gave up fg=… target=…`），不再出现「看着成功其实没抢到」的假象。
 
+## 窗口已显示、只是被别的窗口盖住时
+
+窗口可见但并不在前台（`GetForegroundWindow()` 拿到的是别的窗口）。此时按热键会先把它
+**置顶到前台**，而不是顺手最小化：`Toggle()` 在展开分支里先取前台窗口，`foreground != hWnd`
+就调 `Focus(hWnd)` 并写日志 `focus (was behind)`，然后直接返回。只有窗口已经处于前台时，
+才走原来的最小化逻辑（日志 `minimize`）。
+
+这样「按一下窗口不见了」只发生在窗口本来就可见且在最前面的情况，不会把用户已经看得见的
+窗口藏到任务栏后面。
+
 ## 配置
 
 `cordis.patch.yml` 里：
@@ -77,6 +87,7 @@ config:
 [plugin] helper started pid=21184 hotkey=Ctrl+Alt+E
 registered mods=0x3 vk=0x45 id=1
 minimize hwnd=0x00040532 sent=True iconic=True
+focus (was behind) hwnd=0x00040532 fg=0x00040816 fronted=True title="DeepSeek Harness"
 restore (was hidden) hwnd=0x00040532 woken=True
 ```
 

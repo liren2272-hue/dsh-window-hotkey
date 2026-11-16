@@ -491,6 +491,16 @@ public class DshHotkeyHelper
             return;
         }
 
+        IntPtr foreground = GetForegroundWindow();
+        if (foreground != hWnd)
+        {
+            // DSH is expanded (visible, not iconic) but sitting behind another
+            // window. Bring it to the top instead of minimizing it: a press should
+            // not hide an app the user can already see behind another window.
+            bool fronted = Focus(hWnd);
+            Log("focus (was behind) hwnd=0x" + hWnd.ToInt64().ToString("X8") + " fg=0x" + foreground.ToInt64().ToString("X8") + " fronted=" + fronted + " title=\\"" + title + "\\"");
+            return;
+        }
         bool handed = SysCommand(hWnd, SC_MINIMIZE);
         if (!handed)
         {
